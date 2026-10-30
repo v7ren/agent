@@ -1,0 +1,27 @@
+{
+  "fps": 6,
+  "size": {
+    "width": 200,
+    "height": 220
+  },
+  "states": {
+    "idle": [
+      "idle-01.png"
+    ],
+    "walk": [
+      "walk-01.png"
+    ],
+    "back": [
+      "back-01.png"
+    ],
+    "talk": [
+      "idle-01.png"
+    ],
+    "eat": [
+      "idle-01.png"
+    ],
+    "drag": [
+      "walk-01.png"
+    ]
+  }
+}

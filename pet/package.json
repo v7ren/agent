@@ -1,0 +1,13 @@
+{
+  "name": "fishd-pet",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "description": "桌面大肥魚：透明視窗外殼，連到 fishd 的 /api/turn。",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^45.1.0"
+  }
+}

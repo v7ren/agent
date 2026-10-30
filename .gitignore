@@ -1,0 +1,52 @@
+# dependencies
+node_modules/
+pet/node_modules/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# process / logs
+*.log
+*.pid
+.fishd.pid
+
+# editor / OS
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.tsbuildinfo
+
+# build / coverage
+dist/
+build/
+coverage/
+
+# runtime state and private memory
+vault/state/
+vault/journal/
+vault/sessions/
+vault/diary/
+vault/archive/
+vault/persona/notes.md
+vault/nodes/people/*
+!vault/nodes/people/.gitkeep
+
+# share media is local; keep the index
+vault/share/*
+!vault/share/index.md
+!vault/share/.gitkeep
+
+# pet sprites and local pet config (personal assets)
+pet/assets/*.png
+pet/assets/*.gif
+pet/assets/*.webp
+pet/assets/*.apng
+pet/assets/*.bmp
+pet/assets/*.mp4
+pet/assets/*.webm
+pet/assets/*.mov
+pet/pet.config.json

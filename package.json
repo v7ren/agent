@@ -1,0 +1,32 @@
+{
+  "name": "fishd",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A companion harness: log-structured context, an Obsidian memory graph, and a mood simulation.",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "bin": {
+    "fishd": "./src/bin.ts"
+  },
+  "scripts": {
+    "start": "node src/bin.ts",
+    "web": "node src/bin.ts --web",
+    "bot": "node src/bin.ts --discord",
+    "pet": "npm --prefix pet start",
+    "pet:assets": "node pet/import-assets.js",
+    "migrate": "node src/bin.ts --migrate",
+    "dev": "node --watch src/bin.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0"
+  }
+}
+

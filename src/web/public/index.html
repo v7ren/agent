@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>藍色大肥魚</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="water" aria-hidden="true"></div>
+
+<div class="app">
+  <header class="bar">
+    <div class="who">
+      <svg class="mark" viewBox="0 0 32 20" aria-hidden="true">
+        <path d="M31 10c-3.2 4.6-9.4 7.4-16 7.4S4.2 15.2 1.6 10c2.6-5.2 6.8-8 13.4-8S27.8 5.4 31 10Z" fill="currentColor" opacity=".9"/>
+        <path d="M9 10h9.5" stroke="#08151b" stroke-width="1.5" stroke-linecap="round" opacity=".5"/>
+        <circle cx="9.6" cy="7.2" r="1.1" fill="#08151b"/>
+      </svg>
+      <span class="name">藍色大肥魚</span>
+    </div>
+
+    <div class="mood" id="mood" data-mood="genki" title="她現在的心情">
+      <span class="dot"></span>
+      <span class="label" id="moodLabel">元氣</span>
+      <span class="pips" id="moodPips" aria-hidden="true"><i></i><i></i><i></i></span>
+    </div>
+
+    <button class="stat-toggle" id="statToggle" aria-expanded="false" aria-controls="side">狀態</button>
+    <button class="ghost-btn" id="settingsBtn">設定</button>
+  </header>
+
+  <main class="scroll" id="scroll">
+    <div class="thread" id="thread">
+      <div class="empty" id="empty">
+        <p class="lead">她還記得昨天。</p>
+        <p class="sub">問她一件只有你們知道的事，看看她記得多少。</p>
+        <div class="suggests">
+          <button type="button">你今天吃白飯了嗎</button>
+          <button type="button">你還記得我喜歡吃什麼嗎</button>
+          <button type="button">晚安</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="side" id="side" aria-label="她的狀態">
+    <section>
+      <h2>現在</h2>
+      <dl class="kv">
+        <div><dt>心情</dt><dd id="s-mood">元氣</dd></div>
+        <div><dt>精神</dt><dd><span class="meter"><i id="s-energy" style="width:60%"></i></span></dd></div>
+        <div><dt>肚子</dt><dd><span class="meter"><i id="s-hunger" class="warm" style="width:30%"></i></span></dd></div>
+      </dl>
+    </section>
+
+    <section>
+      <h2>剛才想起</h2>
+      <div class="mem" id="s-mem"><p class="none">還沒有。</p></div>
+    </section>
+
+    <section>
+      <h2>這次對話</h2>
+      <dl class="kv">
+        <div><dt>回合</dt><dd id="s-turns" class="num">0</dd></div>
+        <div><dt>快取</dt><dd id="s-cache" class="num">—</dd></div>
+        <div><dt>省下</dt><dd id="s-saved" class="num">$0.0000</dd></div>
+      </dl>
+      <div class="hitbar"><i id="s-hitbar" style="width:0%"></i></div>
+    </section>
+
+    <section>
+      <h2>今天的日誌</h2>
+      <div class="journal" id="s-journal"><p class="none">還沒有寫。</p></div>
+    </section>
+  </aside>
+
+  <form class="composer" id="composer" autocomplete="off">
+    <textarea id="input" rows="1" placeholder="跟她說點什麼…" aria-label="訊息"></textarea>
+    <button id="voice" class="voice-btn" type="button" aria-pressed="false" title="語音">靜</button>
+    <button id="send" type="submit">說</button>
+  </form>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+  <header class="sheet-head">
+    <h2 id="sheetTitle">設定</h2>
+    <span class="sheet-sub">寫入 <code>.env</code></span>
+    <button class="ghost-btn" id="sheetClose" aria-label="關閉設定">關閉</button>
+  </header>
+  <div class="sheet-body">
+    <div id="sheetForm"></div>
+
+    <div id="sheetPicker" hidden>
+      <div class="picker-head">
+        <button class="ghost-btn" id="pickerBack">返回</button>
+        <span id="pickerTitle">選擇模型</span>
+      </div>
+      <input id="pickerSearch" class="picker-search" placeholder="搜尋模型…" autocomplete="off">
+      <div class="picker-list" id="pickerList"></div>
+      <div class="picker-manual">
+        <input id="pickerManual" placeholder="或直接輸入 model id" autocomplete="off">
+        <button class="ghost-btn" id="pickerUse" type="button">使用</button>
+      </div>
+    </div>
+  </div>
+  <footer class="sheet-foot">
+    <p class="sheet-hint" id="sheetHint">行為類（講話意願、冷卻、間隔）下一則訊息就生效；模型與人格要重啟。</p>
+    <button class="primary" id="sheetSave">儲存</button>
+  </footer>
+</section>
+
+<script src="/app.js"></script>
+</body>
+</html>
