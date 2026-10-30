@@ -36,7 +36,7 @@ export function formatStats(stat: CacheStat, turns: number): string {
 }
 
 /** Commands that expose the vault: owners only. (/config set is owner-only in discord.ts.) */
-export const OWNER_ONLY = new Set(["recall", "diary", "tune", "ignore"]);
+export const OWNER_ONLY = new Set(["recall", "diary", "tune", "ignore", "rule"]);
 
 export const COMMANDS = [
   new SlashCommandBuilder().setName("ping").setDescription("看看本鯨還在不在"),
@@ -118,6 +118,26 @@ export const COMMANDS = [
         .setDescription("解除")
         .addUserOption((option) => option.setName("user").setDescription("誰").setRequired(true)),
     ),
+  new SlashCommandBuilder()
+    .setName("rule")
+    .setDescription("你交代她一直要遵守的規矩（只有主人能用）")
+    .addSubcommand((sub) => sub.setName("list").setDescription("現在有哪些規矩"))
+    .addSubcommand((sub) =>
+      sub
+        .setName("add")
+        .setDescription("新增一條規矩")
+        .addStringOption((option) =>
+          option.setName("text").setDescription("規矩的內容").setRequired(true).setMaxLength(160),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("remove")
+        .setDescription("刪掉一條規矩")
+        .addStringOption((option) =>
+          option.setName("id").setDescription("編號（/rule list 看得到）").setRequired(true),
+        ),
+    ),
   new SlashCommandBuilder().setName("help").setDescription("指令說明"),
 ];
 
@@ -125,5 +145,5 @@ export const HELP =
   "`/mood` 心情 · `/stats` 快取與花費 · `/recall <關鍵字>` 翻記憶 · " +
   "`/diary [YYYY-MM-DD]` 讀日記 · `/config show` 看設定 · " +
   "`/config set <key> <value>` 改設定 · `/tune list|approve|undo` 她自己調的設定 · " +
-  "`/ignore list|add|remove` 不理某人 · " +
+  "`/ignore list|add|remove` 不理某人 · `/rule list|add|remove` 她要一直遵守的規矩 · " +
   "`/ping` 在不在 · `/help` 這頁";

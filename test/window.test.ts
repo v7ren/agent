@@ -53,7 +53,7 @@ test("windowFromEnv falls back on garbage and clamps", () => {
   assert.equal(windowFromEnv({ FISHD_CONTEXT_TOKENS: "lots" })?.limitTokens, 100000);
   assert.equal(windowFromEnv({ FISHD_CONTEXT_TOKENS: "" })?.limitTokens, 100000);
   assert.equal(windowFromEnv({ FISHD_CONTEXT_TOKENS: "100" })?.limitTokens, 8000);
-  assert.equal(windowFromEnv({ FISHD_CONTEXT_TOKENS: "99999999" })?.limitTokens, 900000);
+  assert.equal(windowFromEnv({ FISHD_CONTEXT_TOKENS: "99999999" })?.limitTokens, 160000);
   assert.equal(windowFromEnv({ FISHD_CONTEXT_TOKENS: "50000" })?.limitTokens, 50000);
 });
 
@@ -74,9 +74,10 @@ test("no plan below the limit, including system tokens", () => {
   const total = historyTokens(msgs);
   assert.equal(planCompaction(msgs, cfg(total + 1)), null);
   assert.equal(planCompaction(msgs, cfg(total)), null);
-  assert.equal(planCompaction(msgs, cfg(total + 10), 20), null);
+  // System tokens count toward the limit too.
+  assert.equal(planCompaction(msgs, cfg(total + 30), 20), null);
   assert.notEqual(planCompaction(msgs, cfg(total - 1)), null);
-  assert.notEqual(planCompaction(msgs, cfg(total + 10), 20), null === 0 ? null : undefined);
+  assert.notEqual(planCompaction(msgs, cfg(total), 20), null);
 });
 
 test("cut leaves remaining within keep and starts at a user message", () => {
@@ -128,7 +129,7 @@ test("handles two users in a row", () => {
 test("handles a trailing user message", () => {
   const msgs = chat(9, 500);
   msgs.push({ role: "user", content: "x".repeat(500) });
-  const plan = planCompaction(msgs, cfg(1500, 0.3));
+  const plan = planCompaction(msgs, cfg(1000, 0.3));
   assert.ok(plan);
   assert.equal(msgs[plan.cut]?.role, "user");
   assert.ok(plan.cut <= msgs.length - 2);
@@ -166,6 +167,6 @@ test("personaAnchor is empty below threshold and a short line above", () => {
   assert.notEqual(line, "");
   assert.ok(line.includes("藍色大肥魚"));
   assert.ok([...line].length < 90, `${[...line].length}`);
-  assert.equal(personaAnchor(100, 50), "");
-  assert.notEqual(personaAnchor(100, 50), "x");
+  assert.equal(personaAnchor(49, 50), "");
+  assert.notEqual(personaAnchor(50, 50), "");
 });

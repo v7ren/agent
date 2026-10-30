@@ -13,7 +13,9 @@ import { startBodyClock } from "./persona/clock.ts";
 import { DriveKit } from "./persona/drives.ts";
 import { DeclineLimiter, declineMaxFromEnv } from "./persona/decline.ts";
 import { IgnoreBook } from "./persona/ignorebook.ts";
+import { StandingRules } from "./persona/standing.ts";
 import { log } from "./log.ts";
+import { windowFromEnv } from "./core/window.ts";
 import { markAlive, markStart, markStop } from "./persona/presence.ts";
 import type { OfflineInfo } from "./persona/presence.ts";
 import { ensureDiaries } from "./memory/autodiary.ts";
@@ -51,7 +53,7 @@ function currentOwnerIds(): string[] {
 function makeAgentFactory(
   offline: OfflineInfo | null = null,
   ignoreBook?: IgnoreBook,
-): (where?: string) => Agent {
+): (where?: string, key?: string) => Agent {
   const pack = (process.env.FISHD_PACK ?? "").trim();
   const persona = loadPersona(CONFIG.personaDir, pack);
   const notesDir = resolvePersonaDir(CONFIG.personaDir, pack);
@@ -62,6 +64,8 @@ function makeAgentFactory(
   const personaLoader = () => loadPersona(CONFIG.personaDir, (process.env.FISHD_PACK ?? "").trim());
   // File-backed, so every room's agent shares one set of drives, slots and tuning.
   const drives = new DriveKit({ dir: CONFIG.stateDir });
+  // What the owner told her to do from now on. One file for every room.
+  const rules = new StandingRules(join(CONFIG.stateDir, "standing-rules.json"));
   // One limiter for every room, so "3 declines an hour" means the whole fish.
   const decliner = new DeclineLimiter(declineMaxFromEnv(process.env));
   // dsh-pet reads this local JSONL bus; `FISHD_PET=0` disables it completely.
@@ -71,12 +75,19 @@ function makeAgentFactory(
   const petLink =
     process.env.FISHD_PET === "0" ? null : createPetLink(petEvents);
 
-  return (where?: string) =>
+  // One big window for the whole fish, from FISHD_CONTEXT_TOKENS (default 100k);
+  // "off" brings back the old turn-count window.
+  const window = windowFromEnv(process.env);
+
+  return (where?: string, key?: string) =>
     new Agent({
+      ...(window ? { window } : {}),
+      ...(key ? { historyKey: key } : {}),
       drives,
       offline,
       decliner,
       ...(ignoreBook ? { ignores: ignoreBook } : {}),
+      rules,
       stateDir: CONFIG.stateDir,
       provider: makeProvider(),
       persona,
@@ -323,7 +334,7 @@ async function main(): Promise<void> {
 
   // Plain chat: no channels, no server.
   if (!wantDiscord && !wantWeb && sayIdx === -1) {
-    const agent = buildAgent();
+    const agent = buildAgent(undefined, "cli");
     try {
       await runCli(agent);
     } finally {
@@ -337,7 +348,7 @@ async function main(): Promise<void> {
   let webAgent: Agent | null = null;
 
   if (wantWeb) {
-    webAgent = buildAgent();
+    webAgent = buildAgent(undefined, "web");
     const { startWeb } = await import("./web/server.ts");
     try {
       const web = await startWeb(webAgent, {

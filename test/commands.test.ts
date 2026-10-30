@@ -52,7 +52,7 @@ test("stats panel survives a cold start", () => {
 test("command names are unique and described", () => {
   const names = COMMANDS.map((command) => command.name);
   assert.equal(new Set(names).size, names.length);
-  assert.deepEqual(names.sort(), ["config", "diary", "help", "ignore", "mood", "ping", "recall", "stats", "tune"]);
+  assert.deepEqual(names.sort(), ["config", "diary", "help", "ignore", "mood", "ping", "recall", "rule", "stats", "tune"]);
 
   for (const command of COMMANDS) {
     assert.ok((command.description ?? "").length > 0, command.name);
@@ -60,7 +60,7 @@ test("command names are unique and described", () => {
 });
 
 test("help lists every command", () => {
-  for (const name of ["mood", "stats", "recall", "diary", "config", "tune", "ignore", "ping", "help"]) {
+  for (const name of ["mood", "stats", "recall", "diary", "config", "tune", "ignore", "rule", "ping", "help"]) {
     assert.ok(HELP.includes(name), name);
   }
 });

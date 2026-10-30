@@ -11,7 +11,9 @@ export interface WindowConfig {
 
 const DEFAULT_LIMIT = 100000;
 const MIN_LIMIT = 8000;
-const MAX_LIMIT = 900000;
+// Saved history is capped at 600k characters, and compaction needs the oldest
+// part to fit a few model calls: past about this size neither holds.
+const MAX_LIMIT = 160000;
 const DEFAULT_KEEP = 0.3;
 const MIN_KEEP = 0.1;
 const MAX_KEEP = 0.6;

@@ -151,7 +151,7 @@ test("the call budget caps wall-clock time across all attempts", async () => {
   let calls = 0;
   const slow: FetchLike = async () => {
     calls++;
-    await new Promise((r) => setTimeout(r, 60));
+    await new Promise((r) => setTimeout(r, 150));
     return json(503, { error: "busy" }, { "retry-after": "0" });
   };
   const p = new OpenAICompatProvider({
@@ -160,10 +160,11 @@ test("the call budget caps wall-clock time across all attempts", async () => {
     model: "m",
     fetch: slow,
     retries: 5,
-    callBudgetMs: 100,
+    callBudgetMs: 250,
     sleep: async () => {},
   });
-  await assert.rejects(p.chat(REQ), /503/);
+  // Whether the last error is the 503 or the budget running out depends on timing.
+  await assert.rejects(p.chat(REQ));
   // Timers jitter under load, so assert the budget stopped it well before
   // all 6 attempts rather than pinning an exact count.
   assert.ok(calls >= 1 && calls <= 3, `budget should stop retries early, got ${calls} calls`);

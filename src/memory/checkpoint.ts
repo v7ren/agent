@@ -16,6 +16,14 @@ export const CHUNK_CHARS = 6000;
 export const MAX_LLM_CALLS = 4;
 
 /**
+ * Thinking models spend the token allowance on reasoning before they answer
+ * ("empty reply (finish=length)"). A summary asked for 300 tokens would come
+ * back empty, so these helper calls never get less than this. It is a ceiling,
+ * not a target: a short answer still costs a short answer.
+ */
+export const HELPER_MIN_TOKENS = 3000;
+
+/**
  * A folder name for a scope. ASCII-only scopes keep their historical name. When
  * any non-ASCII character is present (客廳 and 臥室 would both become 'main'),
  * a short hash of the original is appended so distinct rooms stay distinct.
@@ -130,7 +138,7 @@ export async function condense(opts: {
             { role: "system", content: opts.mapSystem },
             { role: "user", content: piece },
           ],
-          maxTokens: opts.mapMaxTokens ?? 300,
+          maxTokens: Math.max(opts.mapMaxTokens ?? 300, HELPER_MIN_TOKENS),
           ...model,
         }),
       ),
@@ -147,7 +155,7 @@ export async function condense(opts: {
       { role: "system", content: opts.reduceSystem },
       { role: "user", content: opts.reduceUser(material, condensed) },
     ],
-    maxTokens: opts.reduceMaxTokens ?? 500,
+    maxTokens: Math.max(opts.reduceMaxTokens ?? 500, HELPER_MIN_TOKENS),
     ...model,
   });
   return res.text.trim();

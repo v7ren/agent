@@ -38,6 +38,20 @@ export const FIELDS: Field[] = [
     help: "思考型模型需要 600 以上（思考的 token 也吃這個額度，建議 2000+）",
   },
   {
+    key: "FISHD_CONTEXT_TOKENS",
+    group: "模型",
+    label: "記憶視窗（tokens）",
+    type: "text",
+    help: "對話長到這麼多就把最舊的部分整理成筆記，連到日誌、日記和人物筆記。預設 100000；填 off = 舊的 24 輪視窗。要重開機才生效",
+  },
+  {
+    key: "FISHD_COMPACT_KEEP",
+    group: "模型",
+    label: "整理後保留原文的比例",
+    type: "number",
+    help: "0.1–0.6，預設 0.3：整理時最新的這個比例留原文，其餘變成筆記",
+  },
+  {
     key: "FISHD_REASONING",
     group: "模型",
     label: "思考模式",

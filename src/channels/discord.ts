@@ -157,7 +157,7 @@ export interface DiscordHandle {
 class DiscordBot {
   private client: Client;
   private opts: DiscordOptions;
-  private createAgent: (where: string) => Agent;
+  private createAgent: (where: string, key?: string) => Agent;
   private gate: Gate;
   private rules: ScopeRules;
   private pool = new Map<string, Agent>();
@@ -201,7 +201,7 @@ class DiscordBot {
   /** "he typed something and never sent it", waiting for his next message */
   private typedNotes = new Map<string, { text: string; at: number }>();
 
-  constructor(createAgent: (where: string) => Agent, opts: DiscordOptions) {
+  constructor(createAgent: (where: string, key?: string) => Agent, opts: DiscordOptions) {
     this.createAgent = createAgent;
     this.opts = opts;
     this.gate = opts.gate ?? new HeuristicGate();
@@ -381,6 +381,27 @@ class DiscordBot {
       }
 
       const agent = this.agentFor(interaction.channelId ?? "command", "指令");
+
+      if (name === "rule") {
+        const rules = this.agentFor(interaction.channelId ?? "command", "指令").standingRules;
+        if (!rules) {
+          await interaction.editReply("現在沒有開規矩功能。");
+          return;
+        }
+        const sub = interaction.options.getSubcommand();
+        if (sub === "list") {
+          await interaction.editReply(rules.render().slice(0, 1900) || "還沒有任何規矩。");
+          return;
+        }
+        if (sub === "add") {
+          const r = rules.add(interaction.options.getString("text", true));
+          await interaction.editReply(r.ok ? `記下了（第 ${r.rule?.id} 條）。` : (r.reason ?? "不行。"));
+          return;
+        }
+        const r = rules.remove(interaction.options.getString("id", true));
+        await interaction.editReply(r.ok ? `刪掉了第 ${r.rule?.id} 條。` : "沒有這個編號。");
+        return;
+      }
 
       if (name === "ignore") {
         const book = this.opts.ignoreBook;
@@ -1017,7 +1038,8 @@ class DiscordBot {
     const key = this.opts.singleSession ? "global" : channelId;
     const existing = this.pool.get(key);
     if (existing) return existing;
-    const agent = this.createAgent(where);
+    // The key (channel id, dm:<user>, or "global") names her saved history.
+    const agent = this.createAgent(where, key);
     this.pool.set(key, agent);
     return agent;
   }
@@ -1471,7 +1493,7 @@ class DiscordBot {
 }
 
 export async function startDiscord(
-  createAgent: (where: string) => Agent,
+  createAgent: (where: string, key?: string) => Agent,
   opts: DiscordOptions,
 ): Promise<DiscordHandle> {
   const bot = new DiscordBot(createAgent, opts);
