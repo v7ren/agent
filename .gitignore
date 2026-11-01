@@ -11,6 +11,9 @@ pet/node_modules/
 *.log
 *.pid
 .fishd.pid
+*.tmp
+*.orig
+*.rej
 
 # editor / OS
 .DS_Store
@@ -34,6 +37,9 @@ vault/archive/
 vault/persona/notes.md
 vault/nodes/people/*
 !vault/nodes/people/.gitkeep
+
+# local TTS cache
+vault/voice-cache/
 
 # share media is local; keep the index
 vault/share/*

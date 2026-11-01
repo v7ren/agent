@@ -70,5 +70,27 @@ export function tokenize(text: string): string[] {
  * so the index can take it as a plain query. Empty when nothing is left.
  */
 export function keywordQuery(text: string): string {
-  return tokenize(text).join(" ");
+  return tokenize(withoutAddressing(text)).join(" ");
+}
+
+/** Names that call her. They are in nearly every line of the journal, so they match everything. */
+function callNames(): string[] {
+  const fromEnv = (process.env.DISCORD_NAMES ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return [...new Set(["藍色大肥魚", "大肥魚", "肥魚", "本鯨", ...fromEnv])].sort(
+    (a, b) => b.length - a.length,
+  );
+}
+
+/**
+ * Strip what makes a question *to her* from what the question is *about*:
+ * "@藍色大肥魚 你記得許願…" searches for 許願, not for her own name, which
+ * would match every line she ever said and bury the answer.
+ */
+export function withoutAddressing(text: string): string {
+  let out = text.replace(/@\S+/g, " ");
+  for (const name of callNames()) out = out.split(name).join(" ");
+  return out;
 }

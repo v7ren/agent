@@ -205,7 +205,7 @@ test("bias makes her harder to convince, not silent by fiat", async () => {
 
 test("jev state carries the room context", () => {
   const state = buildJevState(input);
-  assert.ok(state.includes("阿華：火鍋好不好"));
+  assert.ok(state.includes("[阿華]：火鍋好不好"));
   assert.ok(state.includes("大肥魚"));
   assert.ok(state.includes("最後一則") || state.includes("距離"));
 });

@@ -225,7 +225,7 @@ export interface MemoryPort {
   /** Append one message to the journal, then make it searchable. */
   log(event: MemoryEvent): void;
   /** Pointers only. */
-  search(query: string, limit?: number, scope?: Scope): Hit[];
+  search(query: string, limit?: number, scope?: Scope, perFile?: number): Hit[];
   /**
    * Read an actual file window. With a scope, journal lines tagged with another
    * room are omitted; untagged and shared lines stay.
@@ -300,9 +300,9 @@ export class VaultMemory implements MemoryPort {
     lines.push("</memory>");
     return { id: "memory", volatility: 4, content: lines.join("\n") };
   }
-  search(query: string, limit = 6, scope?: Scope): Hit[] {
+  search(query: string, limit = 6, scope?: Scope, perFile = 1): Hit[] {
     if (query.trim() === "") return [];
-    return this.index.search(query, limit, { scope });
+    return this.index.search(query, limit, { scope, perFile });
   }
 
   open(path: string, fromLine = 1, count = 40, scope?: Scope): string {
@@ -478,7 +478,9 @@ export class VaultMemory implements MemoryPort {
             ? who
             : "使用者";
 
-    const body = clip(event.text, event.kind === "heard" ? 400 : 320);
+    // Long messages (a wish list she wrote, an order) used to be cut here and
+    // were then gone for good. The journal is where nothing gets lost.
+    const body = clip(event.text, 6000);
     const abs = journalPath(this.root, event.at);
     const rel = relative(resolve(this.root), abs).replace(/\\/g, "/");
     const hhmm = `${pad2(event.at.getHours())}:${pad2(event.at.getMinutes())}`;

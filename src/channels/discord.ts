@@ -13,6 +13,8 @@ import type {
 } from "discord.js";
 import type { Agent } from "../core/loop.ts";
 import type { Mood } from "../persona/mood.ts";
+import { seedOf } from "../core/hash.ts";
+import { hesitates, olderIndex, slip, statusText, typingMs } from "../persona/human.ts";
 import { TypingTracker, renderAbandoned } from "../persona/typing.ts";
 import { aimedElsewhere } from "./addressing.ts";
 import { log, snip } from "../log.ts";
@@ -112,6 +114,10 @@ export interface DiscordOptions {
   budget?: { max: number; minutes: number };
   /** the person the bot belongs to: closer, and may receive DMs she starts */
   ownerIds?: string[];
+  /** hands the owner-approval function to whoever builds the agents */
+  registerAsk?: (
+    fn: (req: { requester: { id: string; name: string }; request: string; where: string }) => string,
+  ) => void;
   /** people she is ignoring right now (by her own choice or the owner's) */
   ignoreBook?: IgnoreBook;
   /** actually ping the owner (repliedUser / mention) instead of staying silent */
@@ -167,6 +173,19 @@ class DiscordBot {
   private lastActivity = new Map<string, number>();
   private lastAmbient = new Map<string, number>();
   private bursts = new Map<string, BurstItem[]>();
+  /**
+   * What Jev is shown: the whole room as it went, including lines aimed at her
+   * and her own replies. The burst list only holds what was not for her, and is
+   * emptied when she speaks, so on its own it hides that she was just talking.
+   */
+  private tape = new Map<string, GateMessage[]>();
+  /** the channel of the reply being made now (replies run one at a time) */
+  private activeChannelId = "";
+  /** requests from non-owners waiting for the owner's ✅ or ❌, by the id of the DM that asked */
+  private asks = new Map<
+    string,
+    { requesterId: string; name: string; request: string; channelId: string; where: string; at: number }
+  >();
   private armed = new Map<string, NodeJS.Timeout>();
   private settleUntil = new Map<string, number>();
   private budget = new Map<string, number[]>();
@@ -203,6 +222,7 @@ class DiscordBot {
 
   constructor(createAgent: (where: string, key?: string) => Agent, opts: DiscordOptions) {
     this.createAgent = createAgent;
+    opts.registerAsk?.((req) => this.askOwner(req));
     this.opts = opts;
     this.gate = opts.gate ?? new HeuristicGate();
     this.rules = {
@@ -223,8 +243,9 @@ class DiscordBot {
         // Typing indicators are not privileged; they only say "started typing".
         GatewayIntentBits.GuildMessageTyping,
         GatewayIntentBits.DirectMessageTyping,
+        GatewayIntentBits.DirectMessageReactions,
       ],
-      partials: [Partials.Channel],
+      partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
     });
   }
 
@@ -239,6 +260,9 @@ class DiscordBot {
   async start(): Promise<void> {
     this.client.on(Events.MessageCreate, (msg) => {
       void this.onMessage(msg);
+    });
+    this.client.on(Events.MessageReactionAdd, (reaction, user) => {
+      void this.onApproval(reaction, user).catch((err) => console.error("[discord] approval failed:", err));
     });
     this.client.on(Events.InteractionCreate, (interaction) => {
       if (!interaction.isChatInputCommand()) return;
@@ -644,6 +668,12 @@ class DiscordBot {
         }
       }
       log.info("decide", `→ 回（${this.whyHard(msg, text)}）`);
+      this.tapePush(msg.channelId, {
+        author: this.displayName(msg),
+        text,
+        at: Date.now(),
+        to: ["她"],
+      });
       this.enqueue(
         () => this.respond(msg, text),
         () => {
@@ -674,8 +704,20 @@ class DiscordBot {
     void this.considerAmbient(msg, text, aimed.length > 0);
   }
 
+  private tapePush(channelId: string, item: GateMessage): void {
+    const list = this.tape.get(channelId) ?? [];
+    list.push(item);
+    this.tape.set(channelId, trimBurst(list as never, item.at, 20 * 60_000, 14) as unknown as GateMessage[]);
+  }
+
   private pushBurst(msg: Message, text: string, to: string[] = []): void {
     const now = Date.now();
+    this.tapePush(msg.channelId, {
+      author: this.displayName(msg),
+      text,
+      at: now,
+      ...(to.length > 0 ? { to } : {}),
+    });
     const list = this.bursts.get(msg.channelId) ?? [];
     list.push({
       id: msg.id,
@@ -797,11 +839,9 @@ class DiscordBot {
 
       const ok = await this.gate.decide({
         channel: msg.channelId,
-        messages: burst.map((item) => ({
-          author: item.author,
-          text: item.text,
-          at: item.at,
-        })),
+        messages: (this.tape.get(msg.channelId) ?? []).length > 0
+          ? (this.tape.get(msg.channelId) ?? [])
+          : burst.map((item) => ({ author: item.author, text: item.text, at: item.at })),
         names: this.names(),
         lastSpokeAt: this.lastSpoke.get(msg.channelId) ?? 0,
         now: Date.now(),
@@ -809,9 +849,18 @@ class DiscordBot {
         bias,
         messageId: msg.id,
       });
+      const jev = this.gate as {
+        lastProbability?: number | null;
+        lastToMe?: number | null;
+        lastThreshold?: number | null;
+      };
+      const num = (n: number | null | undefined) => (typeof n === "number" ? n.toFixed(2) : "?");
       log.info(
         "gate",
         `Jev ${ok ? "要插話" : "不插話"}` +
+          (typeof jev.lastProbability === "number"
+            ? `（想說 ${num(jev.lastProbability)}／對她說 ${num(jev.lastToMe)}／門檻 ${num(jev.lastThreshold)}）`
+            : "") +
           (aimedElsewhere ? `（別人之間的對話，門檻 ×${settings.aimedBias}）` : ""),
       );
       if (!ok) return;
@@ -850,11 +899,18 @@ class DiscordBot {
   private async pounce(channelId: string): Promise<void> {
     const burst = this.bursts.get(channelId) ?? [];
     const last = burst[burst.length - 1];
-    if (!last) return;
-    if (inSettle(Date.now(), this.settleUntil.get(channelId) ?? 0)) return;
+    if (!last) {
+      log.info("gate", "Jev 說要插話，但沒有可以接的話（那些話已經被回過了）");
+      return;
+    }
+    // The settle period already made Jev's bar higher (DISCORD_SETTLE_BIAS);
+    // once she has decided, she speaks.
 
     const source = this.channelRefs.get(channelId);
-    if (!source) return;
+    if (!source) {
+      log.info("gate", "Jev 說要插話，但找不到這個頻道");
+      return;
+    }
 
     const channel = source as unknown as {
       sendTyping: () => Promise<void>;
@@ -901,6 +957,7 @@ class DiscordBot {
         ...(item.to ? { to: item.to } : {}),
       }));
 
+      this.activeChannelId = channelId;
       const result = await agent.turn(last.text, {
         speaker: { id: last.authorId, name: last.author },
         group: true,
@@ -914,8 +971,7 @@ class DiscordBot {
 
       const segments = result.segments.filter((s) => s.trim() !== "");
       sending = segments.length > 0;
-      for (let i = 0; i < segments.length; i++) {
-        if (i > 0) await sleep(360 + Math.random() * 420);
+      await this.paced(segments, result.gaps, () => void channel.sendTyping().catch(() => {}), async (i) => {
         const body =
           i === segments.length - 1 && result.kaomoji
             ? `${segments[i]} ${result.kaomoji}`
@@ -923,7 +979,7 @@ class DiscordBot {
         for (const part of chunk(body, MAX_MESSAGE)) {
           await send({ content: part });
         }
-      }
+      }, result.mood.mood);
       if (sending) agent.noteDelivery(true, undefined, segments.length);
 
       if (result.share) {
@@ -942,6 +998,7 @@ class DiscordBot {
       }
 
       this.lastSpoke.set(channelId, Date.now());
+      this.tapePush(channelId, { author: "她", text: segments.join(" ").slice(0, 200), at: Date.now(), self: true });
       this.applyPresence(result.mood.mood, false);
     } catch (err) {
       console.error("[discord] pounce failed:", err);
@@ -1057,13 +1114,15 @@ class DiscordBot {
       await channel.sendTyping();
       const agent = this.agentFor(this.agentKey(msg), this.where(msg));
       this.lastChannel.set(this.agentKey(msg), channel as unknown as Channel);
-      const prior = (this.bursts.get(msg.channelId) ?? [])
+      const priorItems = (this.bursts.get(msg.channelId) ?? [])
         .filter((item) => item.id !== msg.id)
-        .slice(-8)
-        .map((item) => ({ name: item.author, text: item.text }));
+        .slice(-8);
+      const prior = priorItems.map((item) => ({ name: item.author, text: item.text }));
+      const olderPrior = priorItems.map((item) => item.id);
 
       const typedNote = this.takeTypedNote(msg.author.id);
       const replyTo = await this.replyContext(msg);
+      this.activeChannelId = msg.channelId;
       const result = await agent.turn(text, {
         ...(replyTo ? { replyTo } : {}),
         speaker: { id: msg.author.id, name: this.displayName(msg) },
@@ -1078,8 +1137,7 @@ class DiscordBot {
       const segments = result.segments.filter((s) => s.trim() !== "");
       sending = segments.length > 0;
 
-      for (let i = 0; i < segments.length; i++) {
-        if (i > 0) await sleep(360 + Math.random() * 420);
+      await this.paced(segments, result.gaps, () => void channel.sendTyping().catch(() => {}), async (i) => {
         const body =
           i === segments.length - 1 && result.kaomoji
             ? `${segments[i]} ${result.kaomoji}`
@@ -1087,20 +1145,32 @@ class DiscordBot {
 
         const parts = chunk(body, MAX_MESSAGE);
         for (let c = 0; c < parts.length; c++) {
-          const content = parts[c] ?? "";
+          let content = parts[c] ?? "";
+          // Now and then a slip, put right a moment later.
+          const slipped =
+            parts.length === 1 ? slip(content, seedOf(`${msg.id}:${i}`)) : null;
+          if (slipped) content = slipped.typo;
+          let sent: Message | undefined;
           if (i === 0 && c === 0) {
             const pingOwner =
               this.opts.ping === true && this.isOwner(msg.author.id);
-            await msg.reply({
+            // She may answer an older line in the room instead of the latest.
+            const olderId = olderPrior[olderIndex(olderPrior.length, result.replyBack) ?? -1];
+            const target = olderId ? await channel.messages.fetch(olderId).catch(() => null) : null;
+            sent = await (target ?? msg).reply({
               content,
-              allowedMentions: mentionsFor(pingOwner ? msg.author.id : undefined),
+              allowedMentions: mentionsFor(pingOwner && !target ? msg.author.id : undefined),
               failIfNotExists: false,
             });
           } else {
-            await channel.send({ content, allowedMentions: NO_MENTIONS });
+            sent = await channel.send({ content, allowedMentions: NO_MENTIONS });
+          }
+          if (slipped && sent) {
+            const fix = slipped.fix;
+            setTimeout(() => void sent!.edit({ content: fix, allowedMentions: NO_MENTIONS }).catch(() => {}), 1500 + Math.random() * 2500);
           }
         }
-      }
+      }, result.mood.mood);
 
       if (sending) agent.noteDelivery(true, undefined, segments.length);
 
@@ -1121,6 +1191,7 @@ class DiscordBot {
       }
 
       this.lastSpoke.set(msg.channelId, Date.now());
+      this.tapePush(msg.channelId, { author: "她", text: segments.join(" ").slice(0, 200), at: Date.now(), self: true });
       this.clearBurst(msg.channelId);
       this.applyPresence(result.mood.mood, false);
     } catch (err) {
@@ -1131,6 +1202,122 @@ class DiscordBot {
     } finally {
       clearInterval(ticker);
     }
+  }
+
+  /**
+   * Send her bubbles one after another. When she chose a wait between two of
+   * them, honour it: short ones hold here, long ones are sent later in the
+   * background so a pause does not hold up the whole queue.
+   */
+  private async paced(
+    segments: string[],
+    gaps: number[] | undefined,
+    typing: () => void,
+    one: (i: number) => Promise<void>,
+    mood?: Mood,
+  ): Promise<void> {
+    for (let i = 0; i < segments.length; i++) {
+      if (i > 0) {
+        const want = gaps?.[i - 1] ?? gaps?.[gaps.length - 1];
+        if (want === undefined) {
+          // Typing takes as long as the line is long; a long one is sometimes
+          // started, stopped, and started again.
+          const text = segments[i] ?? "";
+          const seed = Math.floor(Math.random() * 0x7fffffff);
+          typing();
+          if (hesitates(text, seed)) {
+            await sleep(1800);
+            await sleep(1500 + Math.random() * 1500);
+            typing();
+          }
+          await sleep(typingMs(text, mood, seed));
+        } else if (want <= 8) {
+          await sleep(want * 1000);
+        } else {
+          void (async () => {
+            for (let j = i; j < segments.length; j++) {
+              const w = Math.min(300, gaps?.[j - 1] ?? want);
+              await sleep(Math.max(0, w * 1000 - 2500));
+              typing();
+              await sleep(Math.min(2500, w * 1000));
+              await one(j);
+            }
+          })().catch((err) => console.error("[discord] later bubble failed:", err));
+          return;
+        }
+      }
+      await one(i);
+    }
+  }
+
+  /**
+   * A stranger asked her for something only the owner should decide. Send the
+   * owner the exact request in a DM; their ✅ or ❌ is the answer.
+   */
+  askOwner(req: { requester: { id: string; name: string }; request: string; where: string }): string {
+    const ownerId = this.opts.ownerIds?.[0];
+    const channelId = this.activeChannelId;
+    if (!ownerId || !channelId) return "現在沒辦法問主人。";
+    for (const [id, a] of this.asks) if (Date.now() - a.at > 24 * 3600_000) this.asks.delete(id);
+    if (this.asks.size >= 20) return "主人那邊已經有很多待回的請求了，先婉拒吧。";
+    void (async () => {
+      const dm = await this.client.users.createDM(ownerId);
+      const sent = await dm.send({
+        content:
+          `【請示】${req.requester.name}（${req.where}）想要我：
+> ${req.request}
+` +
+          `✅ 照做　❌ 不要`,
+        allowedMentions: NO_MENTIONS,
+      });
+      this.asks.set(sent.id, {
+        requesterId: req.requester.id,
+        name: req.requester.name,
+        request: req.request,
+        channelId,
+        where: req.where,
+        at: Date.now(),
+      });
+      await sent.react("✅").catch(() => {});
+      await sent.react("❌").catch(() => {});
+    })().catch((err) => console.error("[discord] ask owner failed:", err));
+    return "已經把這件事傳給主人了，等他點頭。先用你自己的話告訴對方「我去問過主人了」，不要答應。";
+  }
+
+  /** The owner pressed ✅ or ❌ on a request: tell the room what was decided, in her own words. */
+  private async onApproval(
+    reaction: import("discord.js").MessageReaction | import("discord.js").PartialMessageReaction,
+    user: import("discord.js").User | import("discord.js").PartialUser,
+  ): Promise<void> {
+    if (user.bot || !this.isOwner(user.id)) return;
+    const ask = this.asks.get(reaction.message.id);
+    if (!ask) return;
+    const emoji = reaction.emoji.name;
+    if (emoji !== "✅" && emoji !== "❌") return;
+    this.asks.delete(reaction.message.id);
+    const yes = emoji === "✅";
+    log.info("ask", `主人${yes ? "批准" : "拒絕"}了 ${ask.name} 的請求：${ask.request.slice(0, 60)}`);
+
+    const channel = await this.client.channels.fetch(ask.channelId).catch(() => null);
+    if (!channel || !channel.isSendable()) return;
+    this.enqueue(async () => {
+      const agent = this.agentFor(ask.channelId, ask.where);
+      const result = await agent.turn(ask.request, {
+        speaker: { id: ask.requesterId, name: ask.name },
+        group: true,
+        notOwner: true,
+        where: ask.where,
+        note: yes
+          ? `（主人看過「${ask.request}」，說可以。照做，用你自己的話回他；做不到的就老實說。）`
+          : `（主人看過「${ask.request}」，說不要。用你自己的話跟他說主人不同意，不要發火，也不要照做。）`,
+      });
+      const segments = result.segments.filter((s) => s.trim() !== "");
+      for (let i = 0; i < segments.length; i++) {
+        if (i > 0) await sleep(500);
+        await channel.send({ content: segments[i] ?? "", allowedMentions: NO_MENTIONS });
+      }
+      this.lastSpoke.set(ask.channelId, Date.now());
+    }, undefined, true);
   }
 
   /** Is anyone configured as the owner at all? Without one, nobody is told "not your owner". */
@@ -1434,8 +1621,7 @@ class DiscordBot {
       const segments = result.segments.filter((s) => s.trim() !== "");
       let pinged = false;
       sending = segments.length > 0;
-      for (let i = 0; i < segments.length; i++) {
-        if (i > 0) await sleep(360 + Math.random() * 420);
+      await this.paced(segments, result.gaps, () => void channel.sendTyping().catch(() => {}), async (i) => {
         const body =
           i === segments.length - 1 && result.kaomoji
             ? `${segments[i]} ${result.kaomoji}`
@@ -1447,7 +1633,7 @@ class DiscordBot {
           pinged = true;
           await send({ content, allowedMentions: mentionsFor(mention) });
         }
-      }
+      }, result.mood.mood);
       if (sending) agent.noteDelivery(true, undefined, segments.length);
 
       if (result.share) {
@@ -1487,7 +1673,9 @@ class DiscordBot {
     if (!user) return;
     user.setPresence({
       status: PRESENCE[mood],
-      activities: [{ name: ACTIVITY[mood], type: ActivityType.Watching }],
+      activities: [
+        { name: statusText(mood, new Date(), Math.floor(now / PRESENCE_THROTTLE_MS)) || ACTIVITY[mood], type: ActivityType.Watching },
+      ],
     });
   }
 }

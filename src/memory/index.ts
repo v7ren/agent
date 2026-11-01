@@ -29,6 +29,8 @@ export interface SearchOptions {
   scope?: Scope;
   /** epoch ms the recency decay is measured from; defaults to the newest unit */
   now?: number;
+  /** most hits to return from one file; 1 by default, more when a day holds several moments */
+  perFile?: number;
 }
 
 /** Maps a raw line (by 0-based index) to its tags. */
@@ -226,10 +228,12 @@ export class MemoryIndex {
     hits.sort((a, b) => b.score - a.score || comparePath(a.path, b.path) || a.line - b.line);
 
     const out: Hit[] = [];
-    const seenPaths = new Set<string>();
+    const perFile = Math.max(1, Math.floor(opts.perFile ?? 1));
+    const seenPaths = new Map<string, number>();
     for (const hit of hits) {
-      if (seenPaths.has(hit.path)) continue;
-      seenPaths.add(hit.path);
+      const used = seenPaths.get(hit.path) ?? 0;
+      if (used >= perFile) continue;
+      seenPaths.set(hit.path, used + 1);
       out.push(hit);
       if (out.length >= wanted) break;
     }

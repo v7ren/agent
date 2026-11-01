@@ -10,8 +10,9 @@ const MAX_NOTE_CHARS = 200;
 const HEADER = [
   "# 她自己的筆記",
   "",
-  "這是藍色大肥魚自己維護的部分：她學到關於自己、關於這個人的事。",
-  "核心人格在 core.md，不給她改。",
+  "這是你自己的筆記本（persona_note 寫進來的），不管換哪個人格包都在。",
+  "這裡寫的每一條，之後每一輪都會出現在你面前（最多留最近 12 條）；所以只寫真的長期有用的事，一條一句。",
+  "核心人格在 core.md，不給你改。",
   "",
 ].join("\n");
 
@@ -74,7 +75,12 @@ export function appendNote(
   note: string,
   now = new Date(),
 ): string {
-  const clean = note.replace(/\s+/g, " ").trim().slice(0, MAX_NOTE_CHARS);
+  // She often writes the date herself; the file adds it, so drop hers.
+  const clean = note
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\d{4}-\d{2}-\d{2}\s*[：:,，-]?\s*/, "")
+    .slice(0, MAX_NOTE_CHARS);
   if (clean === "") return "";
 
   const path = notesPath(personaDir);

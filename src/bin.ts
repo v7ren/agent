@@ -44,6 +44,14 @@ function personaTokens(pack?: string): number {
   );
 }
 
+type AskFn = (req: {
+  requester: { id: string; name: string };
+  request: string;
+  where: string;
+}) => string;
+/** Filled in by the Discord channel once it exists: a stranger's request goes to the owner. */
+const askHook: { fn?: AskFn } = {};
+
 /** Owners, read live: DISCORD_OWNER_IDS, or the DM list when that is empty. */
 function currentOwnerIds(): string[] {
   const owners = listEnv("DISCORD_OWNER_IDS");
@@ -56,7 +64,8 @@ function makeAgentFactory(
 ): (where?: string, key?: string) => Agent {
   const pack = (process.env.FISHD_PACK ?? "").trim();
   const persona = loadPersona(CONFIG.personaDir, pack);
-  const notesDir = resolvePersonaDir(CONFIG.personaDir, pack);
+  // Notes are hers, not a persona pack's: one file, whichever pack is on.
+  const notesDir = CONFIG.personaDir;
   const memory = new VaultMemory(CONFIG.vaultRoot);
   const cache = new CacheLog();
   const store = moodStore(CONFIG.stateDir);
@@ -84,6 +93,8 @@ function makeAgentFactory(
       ...(window ? { window } : {}),
       ...(key ? { historyKey: key } : {}),
       drives,
+      askOwner: (r) => askHook.fn?.(r) ?? "現在沒辦法問主人。",
+      recallRewriteMs: Number(process.env.FISHD_RECALL_REWRITE_MS ?? 2500),
       offline,
       decliner,
       ...(ignoreBook ? { ignores: ignoreBook } : {}),
@@ -406,6 +417,9 @@ async function main(): Promise<void> {
       onlyChannels: listEnv("DISCORD_ONLY_CHANNELS"),
       dmUsers,
       ownerIds,
+      registerAsk: (fn) => {
+        askHook.fn = fn;
+      },
       ignoreBook,
       ping: process.env.DISCORD_PING === "1",
       singleSession: process.env.DISCORD_SINGLE_SESSION === "1",

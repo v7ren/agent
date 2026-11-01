@@ -9,6 +9,10 @@ export interface GateMessage {
   author: string;
   text: string;
   at: number;
+  /** who the line was for, when it was plainly for someone ("她" = her) */
+  to?: string[];
+  /** a line she said herself */
+  self?: boolean;
 }
 
 export interface GateInput {
@@ -193,11 +197,27 @@ interface JevAnswer {
 }
 
 export function buildJevState(input: GateInput): string {
-  const lines = input.messages
-    .slice(-10)
-    .map((m) => `${m.author}：${m.text}`)
+  const recent = input.messages.slice(-10);
+  const lines = recent
+    .map((m) => {
+      if (m.self) return `她（大肥魚）：${m.text}`;
+      const to = m.to && m.to.length > 0 ? ` → ${m.to.join("、")}` : "";
+      return `[${m.author}${to}]：${m.text}`;
+    })
     .join("\n");
   const quiet = Math.max(0, Math.round((input.now - input.lastSpokeAt) / 60_000));
+
+  // The strongest hint that a line without a name is for her: it came right
+  // after she spoke, from someone she was just talking to.
+  const last = recent[recent.length - 1];
+  const before = recent[recent.length - 2];
+  const followUp =
+    last !== undefined &&
+    before?.self === true &&
+    last.self !== true &&
+    (!last.to || last.to.length === 0 || last.to.includes("她"))
+      ? `最後一則 [${last.author}] 緊接在她剛說完的話之後，很可能是在接她的話。`
+      : "";
 
   return [
     "她是一隻叫「大肥魚」的藍色胖魚，有點傲嬌，最喜歡白飯。",
@@ -205,11 +225,14 @@ export function buildJevState(input: GateInput): string {
     "",
     "判斷重點：",
     "- 如果最後一則是在叫她、問她、或對著整個房間說 → 她可以接。",
+    "- 如果最後一則是在回她剛說的話（接在她後面、沒有叫別人）→ 她可以接。",
+    "- [A → B] 表示那句是 A 對 B 說的；B 不是她時，她不要插話。",
     "- 如果兩個人在互相對話、內容跟魚無關 → 她不要插話。",
     "- 看不出來就當作不是在對她說。",
     "",
     "最近的訊息（舊到新）：",
     lines,
+    ...(followUp ? ["", followUp] : []),
     "",
     `大家叫她的名字：${input.names.join("、")}`,
     `距離她上次開口：${quiet} 分鐘`,
@@ -222,6 +245,8 @@ export class JevGate implements Gate {
   lastProbability: number | null = null;
   /** last P(addressed to her), for `--check` and tuning */
   lastToMe: number | null = null;
+  /** the bar the last probability was held against */
+  lastThreshold: number | null = null;
   private opts: JevOptions;
   private baseUrl: string;
   private doFetch: typeof fetch;
@@ -291,8 +316,12 @@ export class JevGate implements Gate {
       );
       const threshold = (this.threshold * Math.max(1, input.bias ?? 1)) / factor;
 
+      this.lastThreshold = threshold;
       return p >= threshold;
     } catch {
+      this.lastProbability = null;
+      this.lastToMe = null;
+      this.lastThreshold = null;
       return this.opts.fallback.decide(input);
     } finally {
       done();

@@ -55,7 +55,7 @@ node src/bin.ts --import-dsh <dir-or-git-url>  # 匯入 DSH 人格包
 驗證：
 
 ```bash
-npm test           # 485 tests
+npm test           # 519 tests
 npm run typecheck
 ```
 
@@ -170,7 +170,7 @@ Spontaneous 不看 JEV；它是「她自己想講」，不是「判斷要不要�
 3. `tick(mood)`：energy／hunger／睡眠／tease。
 4. 重載 persona（`personaLoader`）；有變就重置 prefix 保護。
 5. 組 tip（**唯一每輪都會變的區塊**）：
-   - recall 指標
+   - recall 指標（一般 2 個 pointer；另有自動 recall：最多 5 個片段／820 字，會跳過已在前文出現的內容）
    - 多人頻道的 roster
    - 對目前這個人的關係摘要
    - persona notes
@@ -615,7 +615,7 @@ Tool 在 `converse()` 的 tool loop 裡執行；最多 4 輪，每輪最多 4 �
 
 ## 測試與已知限制
 
-- `npm test`：485 tests；`npm run typecheck` 乾淨。
+- `npm test`：519 tests；`npm run typecheck` 乾淨。
 - JEV 需要 key；沒有 key 或 timeout 會 fallback，不會讓 bot 沉默。
 - `stable` prompt 層目前是保留的，`bin.ts` 沒有填入長期 profile。
 - 目前預設是大 window（100k／keep 0.3）；`FISHD_CONTEXT_TOKENS=0` 才會回到 24 輪舊模式。
