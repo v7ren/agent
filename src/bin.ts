@@ -10,7 +10,7 @@ import { Agent } from "./core/loop.ts";
 import { appendMoodLog, appendSelfLog, loadPersona, moodStore, saveMood, selfStore } from "./persona/persona.ts";
 import { resolvePersonaDir } from "./persona/packs.ts";
 import { startBodyClock } from "./persona/clock.ts";
-import { DriveKit } from "./persona/drives.ts";
+import { sandboxDrives, startSandboxWatch } from "./plugins/sandbox/index.ts";
 import { DeclineLimiter, declineMaxFromEnv } from "./persona/decline.ts";
 import { IgnoreBook } from "./persona/ignorebook.ts";
 import { StandingRules } from "./persona/standing.ts";
@@ -72,7 +72,7 @@ function makeAgentFactory(
   const self = selfStore(CONFIG.stateDir);
   const personaLoader = () => loadPersona(CONFIG.personaDir, (process.env.FISHD_PACK ?? "").trim());
   // File-backed, so every room's agent shares one set of drives, slots and tuning.
-  const drives = new DriveKit({ dir: CONFIG.stateDir });
+  const drives = sandboxDrives(CONFIG.stateDir);
   // What the owner told her to do from now on. One file for every room.
   const rules = new StandingRules(join(CONFIG.stateDir, "standing-rules.json"));
   // One limiter for every room, so "3 declines an hour" means the whole fish.
@@ -218,6 +218,7 @@ async function main(): Promise<void> {
     const beat = setInterval(() => markAlive(CONFIG.stateDir, new Date()), 60_000);
     beat.unref();
     startDiaryWatch();
+    startSandboxWatch(CONFIG.stateDir);
   }
   // One list for every room and for the Discord layer, kept in a file.
   const ignoreBook = new IgnoreBook({

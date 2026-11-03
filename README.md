@@ -22,6 +22,8 @@
 - [Prompt、預算與快取](#prompt預算與快取)
 - [Vault：那些 JSON 與 MD 在幹嘛](#vault那些-json-與-md-在幹嘛)
 - [工具](#工具)
+- [Sandbox 外掛](#sandbox-外掛)
+- [Hooks（規劃）](#hooks規劃)
 - [通道與桌寵](#通道與桌寵)
 - [設定](#設定)
 - [測試與已知限制](#測試與已知限制)
@@ -55,7 +57,7 @@ node src/bin.ts --import-dsh <dir-or-git-url>  # 匯入 DSH 人格包
 驗證：
 
 ```bash
-npm test           # 519 tests
+npm test           # 520 tests
 npm run typecheck
 ```
 
@@ -493,6 +495,56 @@ Tool 在 `converse()` 的 tool loop 裡執行；最多 4 輪，每輪最多 4 �
 
 ---
 
+## Sandbox 外掛
+
+`src/plugins/sandbox/` 讓她可以使用 Puppet Master 的 Potato Bot sandbox（預設 `pm-sbx-main`），不改 `core/loop.ts`、記憶、人設或 vault。外掛借用既有的 `DriveKit` 工具接口：`src/bin.ts` 只多一行 `sandboxDrives(CONFIG.stateDir)`。
+
+關掉時（`FISHD_SANDBOX` 不是 `1`）完全沒有影響：工具不會出現，watcher 不會啟動。
+
+### 啟用
+
+```env
+FISHD_SANDBOX=1
+```
+
+重啟 `npm run bot`／`npm run web` 後，工具才會進 prompt。舊進程不會熱載入。
+
+### 她拿到什麼
+
+| 工具 | 做什麼 |
+|---|---|
+| `sandbox_status` | 現在有沒有電腦：`available`／`pm_active`／`asleep`／`starting`／`not_set_up`，以及今天還剩幾個動作 |
+| `computer_observe` | 看螢幕：尺寸、指標位置、前景視窗、畫面是否變了。這是唯讀，PM 正在用也可以看 |
+| `computer_act` | 最多 24 個動作：move、click、double_click、drag、scroll、type、key、wait、launch（chrome／terminal／files／editor） |
+
+### 行為與限制
+
+- **PM 優先**：PM 最近 90 秒用過 sandbox 時，`computer_act` 會回 `PM_HAS_PRIORITY`；`observe` 仍可讀。等 PM 安靜後再試。
+- **同一個 sandbox**：跟 Potato Bot 共用 `pm-sbx-main` 與 `47801`。token 從 guest 的 `/run/pm-sbx/control.token` 讀取；沒有時用 `~pm/.pm-sbx/control.token`。
+- **每日上限**：500 個動作（`FISHD_SANDBOX_ACTIONS_PER_DAY`）。超過就整筆拒絕，不部分執行。
+- **保活**：`npm run bot`／`web` 會在背景啟動 watcher。PM 閒置或關閉把 sandbox 停掉後，watcher 會把它開回來；fish 結束後 watcher 自己結束，不會永久佔用。`FISHD_SANDBOX_KEEPALIVE=0` 可關閉。log 在 `vault/state/plugins/sandbox/watch.log`。
+- **只限主人**：沿用 `DriveKit` 的 owner 限制，陌生人不能操作。
+- **不寫心智圖**：外掛狀態只在 `vault/state/plugins/sandbox/`，不寫 journal、diary、people、persona、mood、self。
+- **同步限制**：fish 的 tool loop 是同步的，每次呼叫會啟動一次 `bridge.mjs`；呼叫期間 fish 會短暫阻塞（通常數百毫秒，截圖或頁面動作可能數秒）。
+- **PM 重啟** 會終止 sandbox，fish 進程不死，watcher 會重開；`/home/pm` 的檔案會保留，執行中的程式不會。
+- **沒有 shell／檔案工具**：目前只有螢幕與動作。shell、讀寫檔案、安裝套件是下一步；在共用的 sandbox 上不要用 root 繞過 PM 的設計。
+
+---
+
+## Hooks（規劃）
+
+目前尚未實作。目標是讓她可以自己排「等某件事發生再動作」，例如：
+
+```text
+hook add { when: "sandbox_ready", prompt: "沙箱好了就打開 Chrome 檢查 X", notify: true }
+```
+
+條件成立後由一個 runner 以 spontaneous turn 喚醒她，她可以在同一輪直接呼叫 sandbox 工具，不需要使用者再說話。會沿用同一個 `DriveKit` 接口與 Discord 的 `proactive` 路徑，不改 core、記憶或人設。
+
+規劃中的條件：`sandbox_ready`、`sandbox_stopped`、`after_minutes`、`at`、`file_exists`。限制：只限主人、最多 20 個、每小時最多 6 次喚醒、預設 24 小時過期、單次觸發。
+
+---
+
 ## 通道與桌寵
 
 ### Discord
@@ -611,11 +663,25 @@ Tool 在 `converse()` 的 tool loop 裡執行；最多 4 輪，每輪最多 4 �
 | `FISHD_PET` | 0 = 關閉 Pet Link |
 | `FISHD_PORT` | Web／dsh-pet API 埠 |
 
+### Sandbox 外掛
+
+| Key | 意思 |
+|---|---|
+| `FISHD_SANDBOX` | `1` = 開啟 sandbox 工具；預設關 |
+| `FISHD_SANDBOX_DISTRO` | WSL distro 名稱，預設 `pm-sbx-main` |
+| `FISHD_SANDBOX_CONTROL_PORT` | guest control service 埠，預設 `47801` |
+| `FISHD_SANDBOX_DISPLAY` | 顯示器，預設 `:99` |
+| `FISHD_SANDBOX_KEEPALIVE` | `0` = 關閉背景保活 watcher；預設開 |
+| `FISHD_SANDBOX_WATCH_MS` | watcher 檢查間隔，預設 20000 |
+| `FISHD_SANDBOX_PM_BUSY_MS` | PM 最後使用後多久內視為忙碌，預設 90000 |
+| `FISHD_SANDBOX_ACTIONS_PER_DAY` | 每日動作上限，預設 500 |
+| `FISHD_SANDBOX_TIMEOUT_MS` | 單次 sandbox 呼叫逾時，預設 15000 |
+
 ---
 
 ## 測試與已知限制
 
-- `npm test`：519 tests；`npm run typecheck` 乾淨。
+- `npm test`：520 tests（含 sandbox 外掛的工具介面測試）；`npm run typecheck` 乾淨。
 - JEV 需要 key；沒有 key 或 timeout 會 fallback，不會讓 bot 沉默。
 - `stable` prompt 層目前是保留的，`bin.ts` 沒有填入長期 profile。
 - 目前預設是大 window（100k／keep 0.3）；`FISHD_CONTEXT_TOKENS=0` 才會回到 24 輪舊模式。
